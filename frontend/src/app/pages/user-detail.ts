@@ -147,12 +147,10 @@ export class UserDetail {
   }
   load() {
     this.error.set("");
-    this.api
-      .get<User>("/bff/users/" + this.id)
-      .subscribe({
-        next: (u) => this.set(u),
-        error: (e) => this.error.set(errorMessage(e)),
-      });
+    this.api.get<User>("/api/users/" + this.id).subscribe({
+      next: (u) => this.set(u),
+      error: (e) => this.error.set(errorMessage(e)),
+    });
   }
   private set(u: User) {
     this.user.set(u);
@@ -178,21 +176,21 @@ export class UserDetail {
   }
   saveProfile() {
     if (this.profile.invalid) return;
-    this.save("/bff/users/" + this.id, {
+    this.save("/api/users/" + this.id, {
       ...this.profile.getRawValue(),
       version: this.user()?.version,
     });
   }
   savePermissions() {
     if (this.own()) return;
-    this.save("/bff/users/" + this.id + "/permissions", {
+    this.save("/api/users/" + this.id + "/permissions", {
       ...this.permissions.getRawValue(),
       version: this.user()?.version,
     });
   }
   remove() {
     this.busy.set(true);
-    this.api.mutate("DELETE", "/bff/users/" + this.id).subscribe({
+    this.api.mutate("DELETE", "/api/users/" + this.id).subscribe({
       next: () => this.router.navigateByUrl("/users"),
       error: (e) => {
         this.busy.set(false);

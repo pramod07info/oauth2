@@ -502,4 +502,251 @@ class IdentityServerTest {
     assertThat(clients.findByClientId("identity-ui").getClientSettings().isRequireProofKey())
         .isTrue();
   }
+
+  @Autowired JwtDecoder directDecoder;
+  @Autowired com.pramod.oauth2.repository.LoginSessionRepository loginSessions;
+  @Autowired com.pramod.oauth2.service.DirectLoginService directLogin;
+
+  record DirectTokens(String access, jakarta.servlet.http.Cookie refresh) {}
+
+  private jakarta.servlet.http.Cookie refreshCookie(MvcResult result) {
+    String cookie =
+        result.getResponse().getHeaders("Set-Cookie").stream()
+            .filter(v -> v.startsWith("IDENTITY_REFRESH="))
+            .findFirst()
+            .orElseThrow();
+    return new jakarta.servlet.http.Cookie(
+        "IDENTITY_REFRESH", cookie.substring("IDENTITY_REFRESH=".length(), cookie.indexOf(';')));
+  }
+
+  private DirectTokens directTokens(View user) throws Exception {
+    var result =
+        mvc.perform(
+                post("/api/auth/login")
+                    .with(csrf())
+                    .contentType("application/json")
+                    .content(
+                        json.writeValueAsString(
+                            Map.of("email", user.email(), "password", PASSWORD))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist())
+            .andReturn();
+    assertThat(result.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
+    assertThat(result.getResponse().getHeader("Set-Cookie"))
+        .contains("HttpOnly", "SameSite=Strict", "Path=/api/auth");
+    return new DirectTokens(
+        json.readTree(result.getResponse().getContentAsString()).get("accessToken").asText(),
+        refreshCookie(result));
+  }
+
+  @Test
+  void directLoginUsesJwtAndHashedHttpOnlyRefreshCookie() throws Exception {
+    View user = create(Role.USER);
+    DirectTokens t = directTokens(user);
+    var session =
+        loginSessions
+            .findById(UUID.fromString(directDecoder.decode(t.refresh().getValue()).getSubject()))
+            .orElseThrow();
+    assertThat(session.getRefreshHash()).hasSize(64).doesNotContain(t.refresh().getValue());
+    mvc.perform(get("/api/users/me").cookie(t.refresh())).andExpect(status().isUnauthorized());
+    mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + t.access()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(user.id().toString()));
+    mvc.perform(get("/api/users").header("Authorization", "Bearer " + t.access()))
+        .andExpect(status().isForbidden());
+    mvc.perform(post("/api/auth/login").contentType("application/json").content("{}"))
+        .andExpect(status().isForbidden());
+    mvc.perform(post("/api/auth/refresh").with(csrf())).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void refreshRotatesAndReplayRevokesTheWholeSession() throws Exception {
+    DirectTokens t = directTokens(create(Role.USER));
+    var refreshed =
+        mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(t.refresh()))
+            .andExpect(status().isOk())
+            .andReturn();
+    var next = refreshCookie(refreshed);
+    assertThat(next.getValue()).isNotEqualTo(t.refresh().getValue());
+    mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(t.refresh()))
+        .andExpect(status().isUnauthorized());
+    String access =
+        json.readTree(refreshed.getResponse().getContentAsString()).get("accessToken").asText();
+    mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + access))
+        .andExpect(status().isUnauthorized());
+    mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(next))
+        .andExpect(status().isUnauthorized());
+    assertThat(
+            loginSessions
+                .findById(UUID.fromString(directDecoder.decode(next.getValue()).getSubject()))
+                .orElseThrow()
+                .isRevoked())
+        .isTrue();
+  }
+
+  @Test
+  void directLogoutAndPasswordChangeInvalidateTokens() throws Exception {
+    View user = create(Role.USER);
+    DirectTokens t = directTokens(user);
+    mvc.perform(post("/api/auth/logout").with(csrf()).cookie(t.refresh()))
+        .andExpect(status().isNoContent())
+        .andExpect(
+            header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
+    mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + t.access()))
+        .andExpect(status().isUnauthorized());
+    DirectTokens second = directTokens(user);
+    mvc.perform(
+            put("/api/users/me/password")
+                .header("Authorization", "Bearer " + second.access())
+                .contentType("application/json")
+                .content(
+                    json.writeValueAsString(
+                        new PasswordChange(PASSWORD, "Changed-password-2026!"))))
+        .andExpect(status().isNoContent());
+    mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(second.refresh()))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void profileVersionCanRefreshButDisablingAccountRevokesRefreshSession() throws Exception {
+    View user = create(Role.USER);
+    DirectTokens t = directTokens(user);
+    mvc.perform(
+            put("/api/users/me")
+                .header("Authorization", "Bearer " + t.access())
+                .contentType("application/json")
+                .content("{\"displayName\":\"Changed\",\"version\":0}"))
+        .andExpect(status().isOk());
+    mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + t.access()))
+        .andExpect(status().isUnauthorized());
+    var refreshed =
+        mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(t.refresh()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.user.version").value(1))
+            .andReturn();
+    users.permissions(user.id(), new Permissions(Role.USER, false, 1), UUID.randomUUID());
+    mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(refreshCookie(refreshed)))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void directFailedLoginCountersCommitAndLockTheAccount() throws Exception {
+    View user = create(Role.USER);
+    for (int attempt = 0; attempt < 5; attempt++)
+      mvc.perform(
+              post("/api/auth/login")
+                  .with(csrf())
+                  .contentType("application/json")
+                  .content(
+                      json.writeValueAsString(Map.of("email", user.email(), "password", "wrong"))))
+          .andExpect(status().isUnauthorized());
+    assertThat(repository.byId(user.id()).orElseThrow().lockedUntil()).isAfter(Instant.now());
+    mvc.perform(
+            post("/api/auth/login")
+                .with(csrf())
+                .contentType("application/json")
+                .content(
+                    json.writeValueAsString(Map.of("email", user.email(), "password", PASSWORD))))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void concurrentRefreshCannotIssueTwoIndependentSuccessors() throws Exception {
+    DirectTokens t = directTokens(create(Role.USER));
+    var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+    var start = new java.util.concurrent.CountDownLatch(1);
+    java.util.concurrent.Callable<Integer> request =
+        () -> {
+          start.await();
+          try {
+            directLogin.refresh(t.refresh().getValue());
+            return 200;
+          } catch (org.springframework.web.server.ResponseStatusException ex) {
+            return ex.getStatusCode().value();
+          }
+        };
+    try {
+      var one = executor.submit(request);
+      var two = executor.submit(request);
+      start.countDown();
+      assertThat(
+              List.of(
+                  one.get(15, java.util.concurrent.TimeUnit.SECONDS),
+                  two.get(15, java.util.concurrent.TimeUnit.SECONDS)))
+          .containsExactlyInAnyOrder(200, 401);
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  void expiredAccessJwtCanRefreshButExpiredRefreshSessionCannot() throws Exception {
+    View user = create(Role.USER);
+    DirectTokens t = directTokens(user);
+    String sid = directDecoder.decode(t.refresh().getValue()).getSubject();
+    Instant now = Instant.now();
+    String expired =
+        encoder
+            .encode(
+                JwtEncoderParameters.from(
+                    JwtClaimsSet.builder()
+                        .issuer("http://localhost:9000")
+                        .subject(user.id().toString())
+                        .audience(List.of("user-api"))
+                        .issuedAt(now.minusSeconds(600))
+                        .expiresAt(now.minusSeconds(300))
+                        .claim("sid", sid)
+                        .claim("user_version", "0")
+                        .claim("scope", List.of("users.read"))
+                        .build()))
+            .getTokenValue();
+    mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + expired))
+        .andExpect(status().isUnauthorized());
+    var refreshed =
+        mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(t.refresh()))
+            .andExpect(status().isOk())
+            .andReturn();
+    var session = loginSessions.findById(UUID.fromString(sid)).orElseThrow();
+    session.setExpiresAt(now.minusSeconds(1));
+    loginSessions.saveAndFlush(session);
+    mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(refreshCookie(refreshed)))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void forgedRefreshAndAccessJwtCannotRevokeOrRefreshSession() throws Exception {
+    DirectTokens t = directTokens(create(Role.USER));
+    String raw = t.refresh().getValue();
+    int position = raw.lastIndexOf('.') + 20;
+    String forged =
+        raw.substring(0, position)
+            + (raw.charAt(position) == 'A' ? 'B' : 'A')
+            + raw.substring(position + 1);
+    mvc.perform(
+            post("/api/auth/refresh")
+                .with(csrf())
+                .cookie(new jakarta.servlet.http.Cookie("IDENTITY_REFRESH", forged)))
+        .andExpect(status().isUnauthorized());
+    mvc.perform(
+            post("/api/auth/refresh")
+                .with(csrf())
+                .cookie(new jakarta.servlet.http.Cookie("IDENTITY_REFRESH", t.access())))
+        .andExpect(status().isUnauthorized());
+    mvc.perform(post("/api/auth/logout").cookie(t.refresh())).andExpect(status().isForbidden());
+    mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(t.refresh()))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  void logoutDuringRotationRevokesTheFamilyUsingAnOlderSignedRefreshToken() throws Exception {
+    DirectTokens t = directTokens(create(Role.USER));
+    var refreshed =
+        mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(t.refresh()))
+            .andExpect(status().isOk())
+            .andReturn();
+    mvc.perform(post("/api/auth/logout").with(csrf()).cookie(t.refresh()))
+        .andExpect(status().isNoContent());
+    mvc.perform(post("/api/auth/refresh").with(csrf()).cookie(refreshCookie(refreshed)))
+        .andExpect(status().isUnauthorized());
+  }
 }

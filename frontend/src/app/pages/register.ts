@@ -95,7 +95,7 @@ export class Register {
     this.busy.set(true);
     this.error.set("");
     this.api
-      .mutate("POST", "/bff/register", this.form.getRawValue())
+      .mutate("POST", "/api/auth/register", this.form.getRawValue())
       .subscribe({
         next: () => {
           this.busy.set(false);

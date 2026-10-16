@@ -1,4 +1,5 @@
 import { Component, inject, signal } from "@angular/core";
+import { HttpErrorResponse } from "@angular/common/http";
 import { DatePipe, JsonPipe } from "@angular/common";
 import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
 import { Router } from "@angular/router";
@@ -60,7 +61,7 @@ import { Api, Auth, errorMessage } from "../core/api";
         <dl class="details">
           <div>
             <dt>Authentication</dt>
-            <dd>OAuth2 + PKCE</dd>
+            <dd>JWT access + refresh</dd>
           </div>
           <div>
             <dt>Token expiry</dt>
@@ -68,7 +69,7 @@ import { Api, Auth, errorMessage } from "../core/api";
           </div>
           <div>
             <dt>Credential storage</dt>
-            <dd>Server only</dd>
+            <dd>Access token in memory</dd>
           </div>
         </dl>
         <div class="session-actions">
@@ -90,8 +91,8 @@ import { Api, Auth, errorMessage } from "../core/api";
           <pre>{{ info() | json }}</pre>
         }
         <div class="security-note">
-          Client secrets and tokens stay on the server. Your browser uses an
-          HttpOnly session cookie.
+          Your access token stays in memory. The refresh token is protected by
+          an HttpOnly cookie.
         </div>
       </section>
     </div>`,
@@ -121,15 +122,20 @@ export class Security {
     }
     this.busy.set(true);
     this.api
-      .mutate("PUT", "/bff/users/me/password", {
+      .mutate("PUT", "/api/users/me/password", {
         currentPassword: v.currentPassword,
         newPassword: v.newPassword,
       })
       .subscribe({
         next: () => {
-          this.auth.clear();
+          this.auth.logout().subscribe({
+            next: () => this.router.navigateByUrl("/sign-in"),
+            error: () => {
+              this.auth.clear();
+              this.router.navigateByUrl("/sign-in");
+            },
+          });
           this.form.reset();
-          this.router.navigateByUrl("/sign-in");
         },
         error: (e) => this.fail(e),
       });
@@ -147,7 +153,7 @@ export class Security {
   }
   inspect() {
     this.busy.set(true);
-    this.api.get("/bff/token/info").subscribe({
+    this.api.get("/api/auth/token-info").subscribe({
       next: (v) => {
         this.info.set(v);
         this.busy.set(false);
@@ -158,5 +164,6 @@ export class Security {
   private fail(e: unknown) {
     this.busy.set(false);
     this.error.set(errorMessage(e));
+    if (e instanceof HttpErrorResponse && e.status === 401) this.auth.signIn();
   }
 }

@@ -1,8 +1,9 @@
-import { Component, inject } from "@angular/core";
-import { ActivatedRoute, RouterLink } from "@angular/router";
-import { Auth } from "../core/api";
+import { Component, inject, signal } from "@angular/core";
+import { ActivatedRoute, Router, RouterLink } from "@angular/router";
+import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
+import { Auth, errorMessage } from "../core/api";
 @Component({
-  imports: [RouterLink],
+  imports: [RouterLink, ReactiveFormsModule],
   template: `<div class="auth-layout">
     <section class="auth-story">
       <a class="brand" routerLink="/sign-in"
@@ -21,7 +22,7 @@ import { Auth } from "../core/api";
           ><span class="orbit-badge second">◇ Secure by design</span>
         </div>
       </div>
-      <small>Built on OAuth2 and OpenID Connect</small>
+      <small>Your account, protected.</small>
     </section>
     <section class="auth-form">
       <div class="auth-form-inner">
@@ -33,17 +34,39 @@ import { Auth } from "../core/api";
             We couldn't complete sign-in. Please try again.
           </div>
         }
-        <div class="login-card">
-          <span class="large-icon">◇</span>
-          <h3>Your account, securely connected</h3>
-          <p>
-            Continue to the identity server to enter your email and password.
-          </p>
-          <button class="button primary full" (click)="auth.signIn()">
-            Continue to sign in <span>↗</span>
+
+        <form [formGroup]="form" (ngSubmit)="submit()">
+          <label
+            >Email address<input
+              type="email"
+              formControlName="email"
+              autocomplete="username"
+              placeholder="you@example.com"
+          /></label>
+          <label
+            >Password<input
+              type="password"
+              formControlName="password"
+              autocomplete="current-password"
+              placeholder="Your password"
+          /></label>
+          @if (form.touched && form.invalid) {
+            <p class="field-error">Enter a valid email and your password.</p>
+          }
+          @if (error()) {
+            <div class="alert error" role="alert">{{ error() }}</div>
+          }
+          <button
+            class="button primary full"
+            style="margin-top:24px"
+            [disabled]="busy()"
+          >
+            {{ busy() ? "Signing in…" : "Sign in" }}
           </button>
-          <div class="trust-line">✓ Protected sign-in with PKCE</div>
-        </div>
+          <div class="trust-line">
+            Protected access with automatic token refresh
+          </div>
+        </form>
         <p class="auth-switch">
           New to the workspace? <a routerLink="/register">Create an account</a>
         </p>
@@ -53,5 +76,34 @@ import { Auth } from "../core/api";
 })
 export class Login {
   auth = inject(Auth);
+  router = inject(Router);
   failed = inject(ActivatedRoute).snapshot.queryParamMap.has("error");
+  busy = signal(false);
+  error = signal("");
+  form = inject(FormBuilder).nonNullable.group({
+    email: ["", [Validators.required, Validators.email]],
+    password: ["", Validators.required],
+  });
+  submit() {
+    this.form.markAllAsTouched();
+    if (this.form.invalid) return;
+    this.busy.set(true);
+    this.error.set("");
+    const value = this.form.getRawValue();
+    this.auth.login(value.email, value.password).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.form.reset();
+        this.router.navigateByUrl("/dashboard");
+      },
+      error: (e) => {
+        this.busy.set(false);
+        this.error.set(
+          e.status === 401
+            ? "Email or password is incorrect, or the account is unavailable."
+            : errorMessage(e),
+        );
+      },
+    });
+  }
 }

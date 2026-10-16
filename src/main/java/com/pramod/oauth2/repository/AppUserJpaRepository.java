@@ -9,6 +9,10 @@ import org.springframework.data.repository.query.Param;
 public interface AppUserJpaRepository extends JpaRepository<AppUser, UUID> {
   Optional<AppUser> findByEmail(String email);
 
+  @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+  @Query("select u from AppUser u where u.email=:email")
+  Optional<AppUser> findLockedByEmail(@Param("email") String email);
+
   @Modifying(clearAutomatically = true, flushAutomatically = true)
   @Query(
       "update AppUser u set u.failedAttempts=u.failedAttempts+1, u.lockedUntil=case when"

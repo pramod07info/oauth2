@@ -81,10 +81,11 @@ public class SecurityConfig {
   }
 
   @Bean
-  @Order(2)
+  @Order(3)
   SecurityFilterChain api(
       HttpSecurity http,
       UserRepository users,
+      com.pramod.oauth2.repository.LoginSessionRepository loginSessions,
       OAuth2AuthorizationService authorizations,
       @Value("${app.audience}") String audience)
       throws Exception {
@@ -120,13 +121,26 @@ public class SecurityConfig {
                                     || !version.equals(Long.toString(user.view().version())))
                                   throw new BadCredentialsException(
                                       "Account or token no longer valid");
-                                var authorization =
-                                    authorizations.findByToken(
-                                        jwt.getTokenValue(), OAuth2TokenType.ACCESS_TOKEN);
-                                if (authorization == null
-                                    || authorization.getAccessToken() == null
-                                    || !authorization.getAccessToken().isActive())
-                                  throw new BadCredentialsException("Token revoked");
+                                String sessionId = jwt.getClaimAsString("sid");
+                                if (sessionId != null) {
+                                  var session =
+                                      loginSessions
+                                          .findById(UUID.fromString(sessionId))
+                                          .orElseThrow(
+                                              () -> new BadCredentialsException("Session revoked"));
+                                  if (session.isRevoked()
+                                      || !session.getUserId().equals(user.view().id())
+                                      || !session.getExpiresAt().isAfter(java.time.Instant.now()))
+                                    throw new BadCredentialsException("Session revoked");
+                                } else {
+                                  var authorization =
+                                      authorizations.findByToken(
+                                          jwt.getTokenValue(), OAuth2TokenType.ACCESS_TOKEN);
+                                  if (authorization == null
+                                      || authorization.getAccessToken() == null
+                                      || !authorization.getAccessToken().isActive())
+                                    throw new BadCredentialsException("Token revoked");
+                                }
                                 var authorities =
                                     new ArrayList<
                                         org.springframework.security.core.GrantedAuthority>(
@@ -144,7 +158,7 @@ public class SecurityConfig {
   }
 
   @Bean
-  @Order(4)
+  @Order(5)
   SecurityFilterChain login(HttpSecurity http, UserRepository users) throws Exception {
     http.addFilterAfter(
         new AccountSessionFilter(users),

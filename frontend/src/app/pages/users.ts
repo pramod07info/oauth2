@@ -157,7 +157,7 @@ export class Users {
     this.loading.set(true);
     this.error.set("");
     this.api
-      .get<Page>("/bff/users?page=" + this.page() + "&size=" + this.size)
+      .get<Page>("/api/users?page=" + this.page() + "&size=" + this.size)
       .subscribe({
         next: (p) => {
           this.data.set(p);

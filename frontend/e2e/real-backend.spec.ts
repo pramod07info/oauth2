@@ -5,26 +5,20 @@ test.skip(
 );
 async function login(page: Page, email: string, password: string) {
   await page.goto("/sign-in");
-  await page.getByRole("button", { name: "Continue to sign in" }).click();
-  await page.getByLabel("Username").fill(email);
+  await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  // Spring's generated consent page is shown for a first login to this client.
-  await expect(page).toHaveURL(/oauth2\/authorize|dashboard|oauth2\/consent/, {
-    timeout: 20000,
-  });
-  if (!page.url().endsWith("/dashboard")) {
-    await page.locator('input[type="checkbox"]').first().waitFor();
-    for (const checkbox of await page.locator('input[type="checkbox"]').all())
-      await checkbox.check();
-    await page.getByRole("button", { name: /submit consent/i }).click();
-  }
   await expect(page).toHaveURL(/dashboard$/, { timeout: 20000 });
 }
-test("real OAuth2 login, profile, refresh, password, admin roles and deletion", async ({
+test("direct JWT login, profile, refresh, password, admin roles and deletion", async ({
   page,
 }) => {
   test.setTimeout(120000);
+  const authorizeRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/oauth2/authorize"))
+      authorizeRequests.push(request.url());
+  });
   const email = `browser-${Date.now()}@example.com`,
     password = "Browser-Password-2026!",
     newPassword = "Browser-NewPassword-2026!";
@@ -61,6 +55,13 @@ test("real OAuth2 login, profile, refresh, password, admin roles and deletion", 
     process.env["E2E_ADMIN_EMAIL"] || "admin@example.com",
     process.env["E2E_ADMIN_PASSWORD"] || "LocalAdmin-Test2026!",
   );
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: /Good to see you/ }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.length + sessionStorage.length),
+  ).toBe(0);
   await page.screenshot({
     path: "test-results/admin-overview.png",
     fullPage: true,
@@ -86,4 +87,5 @@ test("real OAuth2 login, profile, refresh, password, admin roles and deletion", 
   await expect(page).toHaveURL(/users$/);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(/sign-in$/);
+  expect(authorizeRequests).toHaveLength(0);
 });
