@@ -12,6 +12,11 @@ public class ApiExceptionHandler {
         HttpStatus.BAD_REQUEST, "Request parameters are invalid");
   }
 
+  @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+  public ProblemDetail stale(org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
+    return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "User changed; reload and retry");
+  }
+
   @ExceptionHandler(DataIntegrityViolationException.class)
   public ProblemDetail conflict(DataIntegrityViolationException ex) {
     return ProblemDetail.forStatusAndDetail(
