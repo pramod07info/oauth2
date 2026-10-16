@@ -26,27 +26,27 @@ import { Auth, errorMessage } from "./core/api";
           <p class="nav-label">WORKSPACE</p>
           <nav>
             <a routerLink="/dashboard" routerLinkActive="active"
-              ><span>◫</span>Overview</a
+              ><span aria-hidden="true">◫</span>Overview</a
             ><a routerLink="/profile" routerLinkActive="active"
-              ><span>◎</span>My profile</a
+              ><span aria-hidden="true">◎</span>My profile</a
             ><a routerLink="/security" routerLinkActive="active"
-              ><span>◇</span>Security</a
+              ><span aria-hidden="true">◇</span>Security</a
             >
             @if (user.role === "ADMIN") {
               <a routerLink="/users" routerLinkActive="active"
-                ><span>♧</span>Users & roles<span class="nav-badge"
+                ><span aria-hidden="true">♧</span>Users & roles<span class="nav-badge"
                   >Admin</span
                 ></a
               >
             }
             <a routerLink="/system" routerLinkActive="active"
-              ><span>⌘</span>System status</a
+              ><span aria-hidden="true">⌘</span>System status</a
             >
           </nav>
           <div class="sidebar-bottom">
             <div class="secure-note">
               <span class="green-dot"></span> Protected workspace<small
-                >OAuth2 · Encrypted session</small
+                >OAuth2 · Server-managed session</small
               >
             </div>
             <div class="account">

@@ -33,7 +33,10 @@ public class BrowserApiService {
     this.clients = clients;
     this.authorizations = authorizations;
     this.users = users;
-    this.http = RestClient.builder().baseUrl(issuer).build();
+    var transport = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+    transport.setConnectTimeout(java.time.Duration.ofSeconds(10));
+    transport.setReadTimeout(java.time.Duration.ofSeconds(30));
+    this.http = RestClient.builder().baseUrl(issuer).requestFactory(transport).build();
   }
 
   private OAuth2AuthorizedClient client(

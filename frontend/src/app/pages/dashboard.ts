@@ -19,7 +19,7 @@ import { Api, Auth, Page } from "../core/api";
       <div>
         <span class="label-tag light">YOU'RE IN GOOD HANDS</span>
         <h2>One identity. A protected workspace.</h2>
-        <p>Your account is connected through a secure, encrypted session.</p>
+        <p>Your account is connected through a protected, server-managed session.</p>
         <a routerLink="/security">Review your security <span>→</span></a>
       </div>
       <div class="banner-art" aria-hidden="true"><span>◇</span><i>✓</i></div>
@@ -28,7 +28,7 @@ import { Api, Auth, Page } from "../core/api";
       <article class="stat-card">
         <span class="stat-icon">◎</span>
         <p>Account status</p>
-        <h3>Active <span class="status active">Verified</span></h3>
+        <h3>Active <span class="status active">Enabled</span></h3>
         <small>Ready to access your workspace</small>
       </article>
       <article class="stat-card">

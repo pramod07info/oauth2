@@ -1,6 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap");
 :root {
-  font-family: "DM Sans", sans-serif;
+  font-family: "Segoe UI", system-ui, sans-serif;
   color: #263b36;
   background: #f7f9f8;
   font-synthesis: none;
@@ -45,7 +44,7 @@ p {
 h1,
 h2,
 h3 {
-  font-family: "Manrope", sans-serif;
+  font-family: "Segoe UI", system-ui, sans-serif;
   letter-spacing: -0.035em;
 }
 h1 {
@@ -82,7 +81,7 @@ small {
   flex-direction: column;
 }
 .brand {
-  font-family: "Manrope", sans-serif;
+  font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 28px;
   font-weight: 800;
   letter-spacing: -1.5px;
