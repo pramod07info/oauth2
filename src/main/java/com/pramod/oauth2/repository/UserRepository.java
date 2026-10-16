@@ -16,16 +16,19 @@ public class UserRepository {
   private final UserAuditJpaRepository audits;
   private final OAuthAuthorizationJpaRepository authorizations;
   private final OAuthConsentJpaRepository consents;
+  private final LoginSessionRepository loginSessions;
 
   public UserRepository(
       AppUserJpaRepository users,
       UserAuditJpaRepository audits,
       OAuthAuthorizationJpaRepository authorizations,
-      OAuthConsentJpaRepository consents) {
+      OAuthConsentJpaRepository consents,
+      LoginSessionRepository loginSessions) {
     this.users = users;
     this.audits = audits;
     this.authorizations = authorizations;
     this.consents = consents;
+    this.loginSessions = loginSessions;
   }
 
   public record Account(View view, String passwordHash, Instant lockedUntil) {}
@@ -123,6 +126,7 @@ public class UserRepository {
   }
 
   public void revoke(String email) {
+    users.findByEmail(email).ifPresent(user -> loginSessions.deleteByUserId(user.getId()));
     consents.deleteByPrincipalName(email);
     authorizations.deleteByPrincipalName(email);
   }

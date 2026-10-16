@@ -34,7 +34,8 @@ import { Auth, errorMessage } from "./core/api";
             >
             @if (user.role === "ADMIN") {
               <a routerLink="/users" routerLinkActive="active"
-                ><span aria-hidden="true">♧</span>Users & roles<span class="nav-badge"
+                ><span aria-hidden="true">♧</span>Users & roles<span
+                  class="nav-badge"
                   >Admin</span
                 ></a
               >
@@ -46,7 +47,7 @@ import { Auth, errorMessage } from "./core/api";
           <div class="sidebar-bottom">
             <div class="secure-note">
               <span class="green-dot"></span> Protected workspace<small
-                >OAuth2 · Server-managed session</small
+                >JWT · Rotating refresh</small
               >
             </div>
             <div class="account">

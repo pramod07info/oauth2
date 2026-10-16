@@ -18,38 +18,45 @@ const member = {
 };
 test.beforeEach(async ({ page }) => {
   let person = { ...member };
-  await page.route("**/bff/**", async (route) => {
+  let owner = { ...admin };
+  await page.route("**/api/**", async (route) => {
     const req = route.request(),
       path = new URL(req.url()).pathname;
     let body: unknown = {};
-    if (path === "/bff/session")
-      body = { user: admin, expiresAt: "2026-10-17T10:00:00Z" };
-    else if (path === "/bff/csrf")
+    if (path === "/api/auth/refresh")
+      body = {
+        user: owner,
+        accessToken: "mock-access",
+        expiresAt: "2099-01-01T00:00:00Z",
+        tokenType: "Bearer",
+      };
+    else if (path === "/api/users/me" && req.method() === "GET") body = owner;
+    else if (path === "/api/auth/csrf")
       body = { headerName: "X-CSRF-TOKEN", token: "mock-csrf" };
-    else if (path === "/bff/users")
+    else if (path === "/api/users")
       body = { content: [admin, person], page: 0, size: 20, totalElements: 2 };
-    else if (path === "/bff/users/member-1" && req.method() === "GET")
+    else if (path === "/api/users/member-1" && req.method() === "GET")
       body = person;
-    else if (path === "/bff/users/member-1" && req.method() === "PUT") {
+    else if (path === "/api/users/member-1" && req.method() === "PUT") {
       person = {
         ...person,
         ...req.postDataJSON(),
         version: person.version + 1,
       };
       body = person;
-    } else if (path === "/bff/users/member-1/permissions") {
+    } else if (path === "/api/users/member-1/permissions") {
       person = {
         ...person,
         ...req.postDataJSON(),
         version: person.version + 1,
       };
       body = person;
-    } else if (path === "/bff/register") body = member;
-    else if (path === "/bff/users/me" && req.method() === "PUT")
-      body = { ...admin, ...req.postDataJSON(), version: 1 };
-    if (req.method() !== "GET")
+    } else if (path === "/api/auth/register") body = member;
+    else if (path === "/api/users/me" && req.method() === "PUT")
+      body = owner = { ...owner, ...req.postDataJSON(), version: 1 };
+    if (path === "/api/auth/logout" || path === "/api/auth/refresh")
       expect(req.headers()["x-csrf-token"]).toBe("mock-csrf");
-    if (path === "/bff/logout" || req.method() === "DELETE")
+    if (path === "/api/auth/logout" || req.method() === "DELETE")
       return route.fulfill({ status: 204 });
     return route.fulfill({ json: body });
   });
@@ -99,9 +106,17 @@ test("registration validates fields and shows completion", async ({ page }) => {
 test("members cannot navigate to the administration screen", async ({
   page,
 }) => {
-  await page.route("**/bff/session", (r) =>
-    r.fulfill({ json: { user: member, expiresAt: "2026-10-17T10:00:00Z" } }),
+  await page.route("**/api/auth/refresh", (r) =>
+    r.fulfill({
+      json: {
+        user: member,
+        accessToken: "mock-member",
+        expiresAt: "2099-01-01T00:00:00Z",
+        tokenType: "Bearer",
+      },
+    }),
   );
+  await page.route("**/api/users/me", (r) => r.fulfill({ json: member }));
   await page.goto("/users");
   await expect(page).toHaveURL(/dashboard$/);
   await expect(page.getByRole("link", { name: "Users & roles" })).toHaveCount(

@@ -59,7 +59,7 @@ public class BrowserSecurityConfig {
   }
 
   @Bean
-  @Order(3)
+  @Order(4)
   SecurityFilterChain browser(
       HttpSecurity http,
       ClientRegistrationRepository registrations,

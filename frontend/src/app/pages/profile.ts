@@ -85,13 +85,19 @@ export class Profile {
     this.error.set("");
     this.success.set(false);
     this.api
-      .mutate<User>("PUT", "/bff/users/me", {
+      .mutate<User>("PUT", "/api/users/me", {
         ...this.form.getRawValue(),
         version: this.auth.user()?.version,
       })
       .subscribe({
         next: (user) => {
           this.auth.user.set(user);
+          this.auth.refresh().subscribe({
+            error: () => {
+              this.auth.clear();
+              this.auth.signIn();
+            },
+          });
           this.busy.set(false);
           this.success.set(true);
         },

@@ -19,7 +19,9 @@ import { Api, Auth, Page } from "../core/api";
       <div>
         <span class="label-tag light">YOU'RE IN GOOD HANDS</span>
         <h2>One identity. A protected workspace.</h2>
-        <p>Your account is connected through a protected, server-managed session.</p>
+        <p>
+          Your account is connected through a protected, server-managed session.
+        </p>
         <a routerLink="/security">Review your security <span>→</span></a>
       </div>
       <div class="banner-art" aria-hidden="true"><span>◇</span><i>✓</i></div>
@@ -58,7 +60,7 @@ import { Api, Auth, Page } from "../core/api";
               ? total() === null
                 ? "—"
                 : total()
-              : "OAuth2 + PKCE"
+              : "JWT access + refresh"
           }}
         </h3>
         <small>{{
@@ -146,11 +148,9 @@ export class Dashboard {
   total = signal<number | null>(null);
   constructor() {
     if (this.auth.user()?.role === "ADMIN")
-      this.api
-        .get<Page>("/bff/users?size=1&page=0")
-        .subscribe({
-          next: (p) => this.total.set(p.totalElements),
-          error: () => this.total.set(null),
-        });
+      this.api.get<Page>("/api/users?size=1&page=0").subscribe({
+        next: (p) => this.total.set(p.totalElements),
+        error: () => this.total.set(null),
+      });
   }
 }
