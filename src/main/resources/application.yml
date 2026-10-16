@@ -24,6 +24,7 @@ management:
   endpoints.web.exposure.include: health
   endpoint.health.show-details: never
 app:
+  ui-base-url: ${UI_BASE_URL:http://localhost:4200}
   issuer: ${OAUTH_ISSUER:https://localhost:9000}
   audience: user-api
   jwk-file: ${JWT_JWK_FILE}

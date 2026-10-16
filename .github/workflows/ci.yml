@@ -26,3 +26,63 @@ jobs:
           TEST_DB_URL: jdbc:postgresql://localhost:5432/oauth2_test
           TEST_DB_USERNAME: oauth2
           TEST_DB_PASSWORD: integration-only-password
+
+  frontend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: oauth2
+          POSTGRES_USER: oauth2
+          POSTGRES_PASSWORD: browser-integration-password
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U oauth2" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/oauth2
+      DB_USERNAME: oauth2
+      DB_PASSWORD: browser-integration-password
+      OAUTH_ISSUER: http://localhost:9000
+      OAUTH_CLIENT_SECRET: browser-integration-client-secret-at-least-32
+      OAUTH_REDIRECT_URI: http://127.0.0.1:8080/callback
+      COOKIE_SECURE: 'false'
+      BOOTSTRAP_ADMIN_EMAIL: admin@example.com
+      BOOTSTRAP_ADMIN_PASSWORD: LocalAdmin-Test2026!
+      REAL_BACKEND: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: |
+          mvn -B -DskipTests package
+          java scripts/GenerateKey.java "$RUNNER_TEMP/browser-jwk.json"
+          JWT_JWK_FILE="$RUNNER_TEMP/browser-jwk.json" java -jar target/oauth2-1.0.0-SNAPSHOT.jar > "$RUNNER_TEMP/backend.log" 2>&1 &
+          for attempt in {1..60}; do
+            if curl -fsS http://localhost:9000/actuator/health; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/backend.log"
+          exit 1
+      - run: npm run e2e
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: frontend/test-results/

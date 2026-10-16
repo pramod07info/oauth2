@@ -132,3 +132,55 @@ All production persistence uses Jakarta Persistence entities and Spring Data JPA
 Existing V1/V2 Flyway migrations, table/column names, IDs and OAuth JSON serialization remain compatible. **Keep your existing database and signing key**; no table reset or data export is required. JDBC adapters appear only in a migration regression test to verify old/new record compatibility. Client configuration, environment variables, API URLs and Postman requests remain the same.
 
 `AppUser.version` uses Hibernate `@Version` for concurrency checks. Audit and authorization cleanup participate in the user service transaction. Open Session in View is disabled; DTOs are assembled within transactions. Account-lockout counters use atomic JPQL updates without changing the account token version.
+
+## Angular Identity Console
+
+The `frontend/` project uses Angular 21 LTS with standalone components, lazy routes, reactive forms, signals, strict TypeScript and a responsive layout. Use Node.js **24 LTS** and npm. Keep your existing database and signing key.
+
+### Run on Windows
+
+1. Pull this branch (or `main` after merging) and restart Spring Boot with your existing environment variables. For local HTTP use `OAUTH_ISSUER=http://localhost:9000`, `COOKIE_SECURE=false`, and `UI_BASE_URL=http://localhost:4200`.
+2. In a separate PowerShell terminal:
+
+```powershell
+cd "C:\your-project-path\oauth2\frontend"
+npm ci
+npm start
+```
+
+3. Open **http://localhost:4200**. Register a member or choose **Continue to sign in**. Enter the account email in the identity server's Username field, enter its password and approve consent.
+
+The server automatically provisions a separate confidential `identity-ui` OAuth client, using the existing `OAUTH_CLIENT_SECRET`, callback `${OAUTH_ISSUER}/login/oauth2/code/identity-ui`, mandatory S256 PKCE, consent and refresh rotation. The existing Postman client/redirect are unchanged. Like other clients, this registration is inserted once; changing issuer or secret later requires deliberately updating the stored registration. Never place a client secret in Angular environment files.
+
+### Pages and API coverage
+
+| Page | Features / existing APIs |
+|---|---|
+| Sign in / registration | Browser OAuth2 authorization, code exchange, CSRF-protected registration |
+| Overview | Current identity, role, session expiry, administrator user count |
+| My profile | View and update own profile; optimistic version handling |
+| Security | Password change, refresh, token introspection |
+| Users & roles (ADMIN) | Paginated listing; member details; display-name updates; role assignment; enable/disable; confirmed deletion |
+| System status | Health, OpenID discovery and public JWKS |
+| Sign out | Revoke the current authorization's access/refresh tokens and invalidate the browser session |
+
+### Browser security and deployment
+
+Angular calls same-origin `/bff/*` endpoints. The Spring OAuth2 Client implements the backend-for-frontend: client credentials and access/refresh tokens remain in the server session, never browser storage or frontend responses. Spring validates OIDC identity tokens and uses PKCE. Every browser mutation requires a CSRF token obtained from `/bff/csrf`. Existing `/api/*` endpoints remain bearer-only and enforce authorization roles/scopes server-side. The bridge forwards only explicit user-management routes; it is not an arbitrary URL proxy.
+
+Refresh is serialized within each server session and happens automatically near expiry. Profile updates refresh the token/version; password changes sign out. Browser sessions are currently in-memory. Use sticky sessions for multiple instances or configure a shared session store with a distributed refresh lock before removing affinity. Session logout revokes the current login's authorization, not other devices.
+
+The development proxy in `frontend/proxy.conf.json` connects to localhost:9000. Production: `npm run build`, serve `frontend/dist/identity-console/browser` with SPA fallback, and route `/bff/**`, `/api/**`, `/oauth2/**`, `/.well-known/**`, `/login`, `/error` and `/actuator/health` to Spring. The Angular sign-in route is `/sign-in` to avoid colliding with Spring's `/login`. Serve both from the same HTTPS origin; configure the public `OAUTH_ISSUER`, `UI_BASE_URL` and secure cookies. Do not deploy `ng serve` or enable permissive CORS in production.
+
+### Frontend validation
+
+```powershell
+cd frontend
+npm ci
+npm run build
+npm test
+npx playwright install chromium
+npm run e2e
+```
+
+The default browser suite uses mocked API responses for deterministic UI tests. To exercise the actual backend, start it with an isolated database and the development bootstrap admin, then set `$env:REAL_BACKEND="1"` before `npm run e2e`. Override `E2E_ADMIN_EMAIL` and `E2E_ADMIN_PASSWORD` if needed. The live test creates a temporary member, signs in through consent, edits its profile, refreshes/inspects the session, changes its password, then uses ADMIN to change permissions and delete it. Never run this against production. GitHub CI runs this live flow against PostgreSQL 17 in addition to backend and frontend unit tests.

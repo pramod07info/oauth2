@@ -144,7 +144,7 @@ public class SecurityConfig {
   }
 
   @Bean
-  @Order(3)
+  @Order(4)
   SecurityFilterChain login(HttpSecurity http, UserRepository users) throws Exception {
     http.addFilterAfter(
         new AccountSessionFilter(users),
@@ -224,6 +224,8 @@ public class SecurityConfig {
       if (!account.view().enabled())
         throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
       context.getClaims().subject(account.view().id().toString());
+      if ("id_token".equals(context.getTokenType().getValue()))
+        context.getClaims().claim("email", account.view().email());
       if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
         context
             .getClaims()
