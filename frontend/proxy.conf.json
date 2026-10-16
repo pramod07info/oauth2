@@ -1,0 +1,27 @@
+{
+  "/bff/**": {
+    "target": "http://localhost:9000",
+    "secure": false,
+    "changeOrigin": false
+  },
+  "/oauth2/authorization/**": {
+    "target": "http://localhost:9000",
+    "secure": false,
+    "changeOrigin": false
+  },
+  "/actuator/health": {
+    "target": "http://localhost:9000",
+    "secure": false,
+    "changeOrigin": false
+  },
+  "/.well-known/openid-configuration": {
+    "target": "http://localhost:9000",
+    "secure": false,
+    "changeOrigin": false
+  },
+  "/oauth2/jwks": {
+    "target": "http://localhost:9000",
+    "secure": false,
+    "changeOrigin": false
+  }
+}

@@ -24,7 +24,10 @@ final class AccountSessionFilter extends OncePerRequestFilter {
     var session = request.getSession(false);
     var auth = SecurityContextHolder.getContext().getAuthentication();
     if (session != null
-        && auth instanceof UsernamePasswordAuthenticationToken
+        && (auth instanceof UsernamePasswordAuthenticationToken
+            || auth
+                instanceof
+                org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken)
         && auth.isAuthenticated()) {
       var account = users.byEmail(auth.getName());
       var version = session.getAttribute(VERSION);

@@ -475,4 +475,31 @@ class IdentityServerTest {
       second.close();
     }
   }
+
+  @Test
+  void browserEndpointsRequireCsrfAndStartPkceWithoutLeakingSecret() throws Exception {
+    mvc.perform(get("/bff/session")).andExpect(status().isUnauthorized());
+    mvc.perform(post("/bff/register").contentType("application/json").content("{}"))
+        .andExpect(status().isForbidden());
+    mvc.perform(
+            post("/bff/register")
+                .with(csrf())
+                .contentType("application/json")
+                .content(
+                    json.writeValueAsString(
+                        new Registration(
+                            UUID.randomUUID() + "@example.com", PASSWORD, "Browser member"))))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.role").value("USER"));
+    var result =
+        mvc.perform(get("/oauth2/authorization/identity-ui"))
+            .andExpect(status().is3xxRedirection())
+            .andReturn();
+    assertThat(result.getResponse().getHeader("Location"))
+        .contains("code_challenge_method=S256")
+        .contains("code_challenge=")
+        .doesNotContain(SECRET);
+    assertThat(clients.findByClientId("identity-ui").getClientSettings().isRequireProofKey())
+        .isTrue();
+  }
 }
