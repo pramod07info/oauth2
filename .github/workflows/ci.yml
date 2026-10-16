@@ -1,0 +1,28 @@
+name: Build and PostgreSQL integration tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: oauth2_test
+          POSTGRES_USER: oauth2
+          POSTGRES_PASSWORD: integration-only-password
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U oauth2 -d oauth2_test" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B verify
+        env:
+          TEST_DB_URL: jdbc:postgresql://localhost:5432/oauth2_test
+          TEST_DB_USERNAME: oauth2
+          TEST_DB_PASSWORD: integration-only-password

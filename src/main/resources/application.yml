@@ -1,0 +1,30 @@
+server:
+  port: ${PORT:9000}
+  shutdown: graceful
+  forward-headers-strategy: none
+  servlet:
+    session:
+      timeout: 15m
+      cookie:
+        http-only: true
+        secure: ${COOKIE_SECURE:true}
+        same-site: lax
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/oauth2}
+    username: ${DB_USERNAME:oauth2}
+    password: ${DB_PASSWORD}
+  sql.init.mode: never
+  mvc.problemdetails.enabled: true
+management:
+  endpoints.web.exposure.include: health
+  endpoint.health.show-details: never
+app:
+  issuer: ${OAUTH_ISSUER:https://localhost:9000}
+  audience: user-api
+  jwk-file: ${JWT_JWK_FILE}
+  client-id: ${OAUTH_CLIENT_ID:user-management}
+  client-secret: ${OAUTH_CLIENT_SECRET}
+  redirect-uri: ${OAUTH_REDIRECT_URI:https://localhost:8080/callback}
+  bootstrap-email: ${BOOTSTRAP_ADMIN_EMAIL:}
+  bootstrap-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
