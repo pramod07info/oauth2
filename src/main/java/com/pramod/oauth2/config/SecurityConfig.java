@@ -12,7 +12,6 @@ import org.springframework.context.annotation.*;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.*;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -182,22 +181,6 @@ public class SecurityConfig {
         .logout(l -> l.logoutSuccessUrl("/login?logout"))
         .sessionManagement(s -> s.sessionFixation(f -> f.changeSessionId()));
     return http.build();
-  }
-
-  @Bean
-  RegisteredClientRepository registeredClients(JdbcTemplate jdbc) {
-    return new JdbcRegisteredClientRepository(jdbc);
-  }
-
-  @Bean
-  OAuth2AuthorizationService authorizations(JdbcTemplate jdbc, RegisteredClientRepository clients) {
-    return new JdbcOAuth2AuthorizationService(jdbc, clients);
-  }
-
-  @Bean
-  OAuth2AuthorizationConsentService consents(
-      JdbcTemplate jdbc, RegisteredClientRepository clients) {
-    return new JdbcOAuth2AuthorizationConsentService(jdbc, clients);
   }
 
   @Bean

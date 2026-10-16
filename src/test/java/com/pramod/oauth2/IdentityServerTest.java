@@ -358,4 +358,121 @@ class IdentityServerTest {
             post("/login").with(csrf()).param("username", user.email()).param("password", PASSWORD))
         .andExpect(redirectedUrl("/login?error"));
   }
+
+  @Autowired javax.sql.DataSource dataSource;
+  @Autowired jakarta.persistence.EntityManagerFactory entityManagerFactory;
+
+  @Autowired
+  org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService
+      authorizationService;
+
+  @Autowired
+  org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService
+      consentService;
+
+  @Test
+  void jpaAdaptersReadAndWriteLegacyJdbcRecords() {
+    // JDBC appears only in this migration test to emulate records from the previous release.
+    var jdbc = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+    var legacyClients =
+        new org.springframework.security.oauth2.server.authorization.client
+            .JdbcRegisteredClientRepository(jdbc);
+    String clientId = "migration-" + UUID.randomUUID();
+    var client =
+        RegisteredClient.from(clients.findByClientId("user-management"))
+            .id(UUID.randomUUID().toString())
+            .clientId(clientId)
+            .clientSecret(passwordEncoder.encode(SECRET))
+            .build();
+    legacyClients.save(client);
+    assertThat(clients.findByClientId(clientId).getTokenSettings().getRefreshTokenTimeToLive())
+        .isEqualTo(client.getTokenSettings().getRefreshTokenTimeToLive());
+    clients.save(RegisteredClient.from(client).clientName("JPA client").build());
+    assertThat(legacyClients.findById(client.getId()).getClientName()).isEqualTo("JPA client");
+
+    var legacyAuthorizations =
+        new org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService(
+            jdbc, legacyClients);
+    var now = Instant.now();
+    var token =
+        new OAuth2AccessToken(
+            OAuth2AccessToken.TokenType.BEARER,
+            "legacy-" + UUID.randomUUID(),
+            now,
+            now.plusSeconds(300),
+            Set.of("users.read"));
+    var authorization =
+        org.springframework.security.oauth2.server.authorization.OAuth2Authorization
+            .withRegisteredClient(client)
+            .id(UUID.randomUUID().toString())
+            .principalName("migration@example.com")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("users.read"))
+            .token(
+                token,
+                m ->
+                    m.put(
+                        org.springframework.security.oauth2.server.authorization.OAuth2Authorization
+                            .Token.CLAIMS_METADATA_NAME,
+                        new java.util.HashMap<>(Map.of("sub", "migration-user"))))
+            .build();
+    legacyAuthorizations.save(authorization);
+    var loaded =
+        authorizationService.findByToken(
+            token.getTokenValue(),
+            org.springframework.security.oauth2.server.authorization.OAuth2TokenType.ACCESS_TOKEN);
+    assertThat(loaded.getAccessToken().getClaims()).containsEntry("sub", "migration-user");
+    authorizationService.save(
+        org.springframework.security.oauth2.server.authorization.OAuth2Authorization.from(loaded)
+            .attribute("migration", "jpa")
+            .build());
+    assertThat(
+            (String) legacyAuthorizations.findById(authorization.getId()).getAttribute("migration"))
+        .isEqualTo("jpa");
+
+    var legacyConsents =
+        new org.springframework.security.oauth2.server.authorization
+            .JdbcOAuth2AuthorizationConsentService(jdbc, legacyClients);
+    var consent =
+        org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsent.withId(
+                client.getId(), "migration@example.com")
+            .scope("users.read")
+            .build();
+    legacyConsents.save(consent);
+    assertThat(consentService.findById(client.getId(), "migration@example.com").getScopes())
+        .containsExactly("users.read");
+    consentService.save(
+        org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsent.from(
+                consent)
+            .scope("users.write")
+            .build());
+    assertThat(legacyConsents.findById(client.getId(), "migration@example.com").getScopes())
+        .contains("users.write");
+    assertThat(entityManagerFactory.isOpen()).isTrue();
+  }
+
+  @Test
+  void hibernateRejectsConcurrentUserUpdates() {
+    View user = create(Role.USER);
+    var first = entityManagerFactory.createEntityManager();
+    var second = entityManagerFactory.createEntityManager();
+    try {
+      first.getTransaction().begin();
+      second.getTransaction().begin();
+      var firstCopy = first.find(com.pramod.oauth2.entity.AppUser.class, user.id());
+      var secondCopy = second.find(com.pramod.oauth2.entity.AppUser.class, user.id());
+      firstCopy.setDisplayName("First writer");
+      first.getTransaction().commit();
+      secondCopy.setDisplayName("Stale writer");
+      assertThatThrownBy(() -> second.getTransaction().commit())
+          .isInstanceOf(jakarta.persistence.RollbackException.class);
+      assertThat(users.get(user.id()).displayName()).isEqualTo("First writer");
+      assertThat(users.get(user.id()).version()).isEqualTo(1);
+    } finally {
+      if (first.getTransaction().isActive()) first.getTransaction().rollback();
+      if (second.getTransaction().isActive()) second.getTransaction().rollback();
+      first.close();
+      second.close();
+    }
+  }
 }

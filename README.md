@@ -1,6 +1,6 @@
 # OAuth2 identity server
 
-Spring Boot 3.5.16, Spring Authorization Server 1.5.8, Spring Security, JDBC, Flyway and PostgreSQL. Java 17+; Docker and CI use Java 21. Code is separated into controller, DTO, service, repository, configuration and exception packages.
+Spring Boot 3.5.16, Spring Authorization Server 1.5.8, Spring Security, Spring Data JPA / Hibernate, Flyway and PostgreSQL. Java 17+; Docker and CI use Java 21. Code is separated into controller, DTO, service, repository, configuration and exception packages.
 
 ## Features
 
@@ -8,9 +8,9 @@ Spring Boot 3.5.16, Spring Authorization Server 1.5.8, Spring Security, JDBC, Fl
 - USER and ADMIN roles; public registration always creates USER. Only administrators can change roles, disable accounts, view other users or delete them.
 - Standards-based OAuth2 Authorization Code with mandatory PKCE (S256), OpenID Connect discovery, consent, JWKS, refresh-token rotation, token revocation and introspection.
 - RSA-signed access JWTs with five-minute lifetime, issuer, audience, UUID subject, roles and account version. Private signing material is supplied externally and survives restarts.
-- BCrypt password hashes, database-backed 15-minute account lockout after five failed logins, CSRF-protected form login/consent/logout, secure session cookies by default, parameterized SQL, bean validation, optimistic concurrency and transactional audit records.
+- BCrypt password hashes, database-backed 15-minute account lockout after five failed logins, CSRF-protected form login/consent/logout, secure session cookies by default, parameterized JPA queries, bean validation, optimistic concurrency and transactional audit records.
 - API bearer authentication validates signature, expiry, issuer, audience, scopes, current account status and version, and persisted token activity. It never authenticates via a browser cookie. Account mutations invalidate existing API JWTs and browser sessions; password/permission changes delete persisted authorizations and refresh tokens.
-- Flyway owns all schemas; application startup does not auto-create Hibernate tables. OAuth2 clients, authorizations and consent persist in PostgreSQL.
+- Flyway owns all schemas; Hibernate validates mappings with `ddl-auto=validate`; it never creates or alters production tables. OAuth2 clients, authorizations and consent persist in PostgreSQL.
 
 ## Start locally
 
@@ -108,7 +108,7 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/oauth2_test \
 TEST_DB_USERNAME=oauth2 TEST_DB_PASSWORD=your-test-password mvn verify
 ```
 
-Without `TEST_DB_URL`, integration tests use H2 in PostgreSQL compatibility mode for fast local checks. CI uses real PostgreSQL 17 and Java 21, running the same Flyway migrations and OAuth2 round trips. Tests exercise real form authentication, PKCE code exchange, signed JWT verification, rotated refresh tokens, role boundaries, disabled accounts, administrator CRUD, validation and optimistic concurrency. Never point tests at a production database.
+Without `TEST_DB_URL`, integration tests use H2 in PostgreSQL compatibility mode for fast local checks. CI uses real PostgreSQL 17 and Java 21, running the same Flyway migrations and OAuth2 round trips, plus bidirectional compatibility checks against records written by the previous JDBC implementation. Tests exercise real form authentication, PKCE code exchange, signed JWT verification, rotated refresh tokens, role boundaries, disabled accounts, administrator CRUD, validation and optimistic concurrency. Never point tests at a production database.
 
 ## Deployment requirements
 
@@ -124,3 +124,11 @@ This is a production-oriented implementation, not a deployment security certific
 - Review patch versions and dependency vulnerability scans, run the PostgreSQL CI suite, conduct a security review and load-test before rollout. Rotating refresh tokens here does not implement refresh-token family reuse detection.
 
 Build the container with `docker build -t oauth2-server .`; supply database/secrets environment variables and mount the signing key at the configured `JWT_JWK_FILE`. It listens on port 9000 and runs as a non-root user.
+
+## JPA / Hibernate persistence
+
+All production persistence uses Jakarta Persistence entities and Spring Data JPA repositories: users, audits, OAuth2 clients, authorizations and consent. `JpaRegisteredClientRepository`, `JpaAuthorizationService` and `JpaAuthorizationConsentService` implement Spring Authorization Server contracts. Spring Boot 3 uses `jakarta.persistence` (modern JPA), not the older `javax.persistence` API.
+
+Existing V1/V2 Flyway migrations, table/column names, IDs and OAuth JSON serialization remain compatible. **Keep your existing database and signing key**; no table reset or data export is required. JDBC adapters appear only in a migration regression test to verify old/new record compatibility. Client configuration, environment variables, API URLs and Postman requests remain the same.
+
+`AppUser.version` uses Hibernate `@Version` for concurrency checks. Audit and authorization cleanup participate in the user service transaction. Open Session in View is disabled; DTOs are assembled within transactions. Account-lockout counters use atomic JPQL updates without changing the account token version.
